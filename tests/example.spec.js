@@ -6,7 +6,7 @@ const {
 
 // Custom function to publish metric to CloudWatch
 async function publishMetric(metricName, value, namespace) {
-  const client = new CloudWatchClient({ region: "us-east-1" }); // Adjust region as needed
+  const client = new CloudWatchClient({ region: "eu-north-1" }); // Adjust region as needed
   const params = {
     MetricData: [
       {
@@ -35,7 +35,7 @@ test.describe("Demo Suite", () => {
   });
 
   test("Test 2: Another assertion", async ({ page }) => {
-    await page.goto("https://playwright.dev");
+    await page.goto("https://playwright.");
     await expect(page).toHaveTitle(/Playwright/);
     passedTests++;
   });
