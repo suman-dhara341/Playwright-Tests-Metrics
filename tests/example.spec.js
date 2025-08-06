@@ -35,7 +35,7 @@ test.describe("Demo Suite", () => {
   });
 
   test("Test 2: Another assertion", async ({ page }) => {
-    await page.goto("https://playwright.");
+    await page.goto("https://playwright.dev");
     await expect(page).toHaveTitle(/Playwright/);
     passedTests++;
   });
