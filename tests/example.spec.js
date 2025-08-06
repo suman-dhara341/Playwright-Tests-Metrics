@@ -4,15 +4,15 @@ const {
   PutMetricDataCommand,
 } = require("@aws-sdk/client-cloudwatch");
 
-// Custom function to publish metric to CloudWatch
-async function publishMetric(metricName, value, namespace) {
-  const client = new CloudWatchClient({ region: "eu-north-1" }); // Adjust region as needed
+// Custom function to publish metric to CloudWatch (added unit parameter for flexibility)
+async function publishMetric(metricName, value, namespace, unit = "Count") {
+  const client = new CloudWatchClient({ region: "eu-north-1" }); // Your specified region
   const params = {
     MetricData: [
       {
         MetricName: metricName,
         Dimensions: [{ Name: "Project", Value: "PlaywrightDemo" }],
-        Unit: "Percent",
+        Unit: unit,
         Value: value,
       },
     ],
@@ -26,7 +26,12 @@ async function publishMetric(metricName, value, namespace) {
 // Sample tests
 test.describe("Demo Suite", () => {
   let passedTests = 0;
-  let totalTests = 2; // Adjust based on number of tests
+  let failedTests = 0;
+  let totalTests = 0;
+
+  test.beforeEach(() => {
+    totalTests++; // Dynamically count each test
+  });
 
   test("Test 1: Successful assertion", async ({ page }) => {
     await page.goto("https://example.com");
@@ -40,8 +45,23 @@ test.describe("Demo Suite", () => {
     passedTests++;
   });
 
+  test.afterEach(async ({}, testInfo) => {
+    if (testInfo.status === "failed" || testInfo.status === "timedOut") {
+      failedTests++;
+    }
+  });
+
   test.afterAll(async () => {
-    const passRate = (passedTests / totalTests) * 100;
-    await publishMetric("TestPassRate", passRate, "PlaywrightTests"); // Publish custom metric
+    // Adjust passed count if needed (total - failed)
+    passedTests = totalTests - failedTests;
+
+    // Publish the new test count metrics
+    await publishMetric("TotalTests", totalTests, "PlaywrightTests");
+    await publishMetric("PassedTests", passedTests, "PlaywrightTests");
+    await publishMetric("FailedTests", failedTests, "PlaywrightTests");
+
+    // Keep your original pass rate metric
+    const passRate = totalTests > 0 ? (passedTests / totalTests) * 100 : 0;
+    await publishMetric("TestPassRate", passRate, "PlaywrightTests", "Percent");
   });
 });
