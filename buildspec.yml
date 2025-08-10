@@ -1,0 +1,83 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+      python: 3.11
+    commands:
+      - echo "Installing system dependencies..."
+      - apt-get update
+      - apt-get install -y curl wget git
+      - echo "System dependencies installed"
+
+  pre_build:
+    commands:
+      - echo "Pre-build phase started on $(date)"
+      - echo "Current working directory: $(pwd)"
+      - echo "Environment variables:"
+      - env | sort
+      - echo "AWS CLI version:"
+      - aws --version
+      - echo "Node.js version:"
+      - node --version
+      - echo "Python version:"
+      - python3 --version
+      - echo "Listing repository contents:"
+      - ls -la
+
+  build:
+    commands:
+      - echo "Build phase started on $(date)"
+      - echo "Starting build duration tracking..."
+      - export BUILD_START_TIME=$(date +%s)
+      
+      - echo "Installing project dependencies..."
+      - npm install
+      - npx playwright install --with-deps
+      
+      - echo "Running Playwright tests..."
+      - npx playwright test
+      
+      - echo "Build completed successfully"
+      - export BUILD_END_TIME=$(date +%s)
+      - export BUILD_DURATION=$((BUILD_END_TIME - BUILD_START_TIME))
+      - echo "Build duration: $BUILD_DURATION seconds"
+
+  post_build:
+    commands:
+      - echo "Post-build phase started on $(date)"
+      
+      # Calculate build duration and success metrics
+      - echo "Sending custom metrics to CloudWatch..."
+      
+      # Send build success metric
+      - aws cloudwatch put-metric-data --namespace "CodeBuild/CustomMetrics" --metric-data MetricName=BuildSuccess,Value=1,Unit=Count,Dimensions=Name=ProjectName,Value=$CODEBUILD_PROJECT_NAME
+      
+      # Send build duration metric
+      - aws cloudwatch put-metric-data --namespace "CodeBuild/CustomMetrics" --metric-data MetricName=BuildDuration,Value=$BUILD_DURATION,Unit=Seconds,Dimensions=Name=ProjectName,Value=$CODEBUILD_PROJECT_NAME
+      
+      # Send build count metric
+      - aws cloudwatch put-metric-data --namespace "CodeBuild/CustomMetrics" --metric-data MetricName=BuildCount,Value=1,Unit=Count,Dimensions=Name=ProjectName,Value=$CODEBUILD_PROJECT_NAME
+      
+      # Send build success rate (will be 100% for successful builds)
+      - aws cloudwatch put-metric-data --namespace "CodeBuild/CustomMetrics" --metric-data MetricName=BuildSuccessRate,Value=100,Unit=Percent,Dimensions=Name=ProjectName,Value=$CODEBUILD_PROJECT_NAME
+      
+      # Send memory utilization metric (approximate)
+      - export MEMORY_USAGE=$(free -m | awk 'NR==2{printf "%.2f", $3*100/$2}')
+      - aws cloudwatch put-metric-data --namespace "CodeBuild/CustomMetrics" --metric-data MetricName=MemoryUtilization,Value=$MEMORY_USAGE,Unit=Percent,Dimensions=Name=ProjectName,Value=$CODEBUILD_PROJECT_NAME
+      
+      # Send deployment ready status
+      - aws cloudwatch put-metric-data --namespace "CodeBuild/CustomMetrics" --metric-data MetricName=DeploymentReady,Value=1,Unit=Count,Dimensions=Name=ProjectName,Value=$CODEBUILD_PROJECT_NAME
+      
+      # Send last successful build timestamp
+      - export CURRENT_TIMESTAMP=$(date +%s)
+      - aws cloudwatch put-metric-data --namespace "CodeBuild/CustomMetrics" --metric-data MetricName=LastSuccessfulBuild,Value=$CURRENT_TIMESTAMP,Unit=None,Dimensions=Name=ProjectName,Value=$CODEBUILD_PROJECT_NAME
+      
+      - echo "All custom metrics sent to CloudWatch namespace: CodeBuild/CustomMetrics"
+      - echo "Build completed successfully with comprehensive monitoring!"
+
+artifacts:
+  files:
+    - '**/*'
+  base-directory: '.'
