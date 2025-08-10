@@ -1,11 +1,147 @@
 version: 0.2
+
 phases:
   install:
     runtime-versions:
-      nodejs: 20  # Use a supported version
+      nodejs: 18
+      python: 3.11
     commands:
-      - npm install
-      - npx playwright install --with-deps  # Install Playwright dependencies
+      - echo "Installing system dependencies..."
+      - apt-get update
+      - apt-get install -y curl wget git
+      - echo "System dependencies installed"
+
+  pre_build:
+    commands:
+      - echo "Pre-build phase started on $(date)"
+      - echo "Current working directory: $(pwd)"
+      - echo "Environment variables:"
+      - env | sort
+      - echo "AWS CLI version:"
+      - aws --version
+      - echo "Node.js version:"
+      - node --version
+      - echo "Python version:"
+      - python3 --version
+      - echo "Listing repository contents:"
+      - ls -la
+
   build:
     commands:
-      - npx playwright test  # Run tests, which will publish the metric via SDK
+      - echo "Build phase started on $(date)"
+      - echo "Installing project dependencies..."
+      # Uncomment and modify these commands based on your project type
+      # - npm install                    # For Node.js projects
+      # - pip install -r requirements.txt  # For Python projects
+
+      - echo "Running tests..."
+      # Add your test commands here
+      # - npm test                       # For Node.js projects
+      # - python -m pytest              # For Python projects
+
+      - echo "Running build..."
+      # Add your build commands here
+      # - npm run build                  # For Node.js projects
+      # - python setup.py build         # For Python projects
+
+      - echo "Build completed successfully"
+
+  post_build:
+    commands:
+      - echo "Post-build phase started on $(date)"
+      - echo "Build result - CODEBUILD_BUILD_SUCCEEDING=$CODEBUILD_BUILD_SUCCEEDING"
+
+      # Calculate build duration
+      - |
+        DURATION_SECONDS=$(($(date +%s) - $CODEBUILD_START_TIME))
+        echo "Build took $DURATION_SECONDS seconds"
+
+      # Send comprehensive custom metrics to CloudWatch
+      - echo "Sending enhanced custom metrics to CloudWatch..."
+
+      # 1. Build Success/Failure Metrics
+      - |
+        if [ $CODEBUILD_BUILD_SUCCEEDING -eq 1 ]; then
+          aws cloudwatch put-metric-data \
+            --namespace "CodeBuild/CustomMetrics" \
+            --metric-data MetricName=BuildSuccess,Value=1,Unit=Count,Dimensions=Name=ProjectName,Value=$CODEBUILD_PROJECT_NAME
+          echo "✅ Build success metric sent"
+          
+          # Send success rate metric (assuming success = 100%)
+          aws cloudwatch put-metric-data \
+            --namespace "CodeBuild/CustomMetrics" \
+            --metric-data MetricName=BuildSuccessRate,Value=100,Unit=Percent,Dimensions=Name=ProjectName,Value=$CODEBUILD_PROJECT_NAME
+        else
+          aws cloudwatch put-metric-data \
+            --namespace "CodeBuild/CustomMetrics" \
+            --metric-data MetricName=BuildFailure,Value=1,Unit=Count,Dimensions=Name=ProjectName,Value=$CODEBUILD_PROJECT_NAME
+          echo "❌ Build failure metric sent"
+          
+          # Send success rate metric (failure = 0%)
+          aws cloudwatch put-metric-data \
+            --namespace "CodeBuild/CustomMetrics" \
+            --metric-data MetricName=BuildSuccessRate,Value=0,Unit=Percent,Dimensions=Name=ProjectName,Value=$CODEBUILD_PROJECT_NAME
+        fi
+
+      # 2. Build Duration Metrics
+      - |
+        aws cloudwatch put-metric-data \
+          --namespace "CodeBuild/CustomMetrics" \
+          --metric-data MetricName=BuildDuration,Value=$DURATION_SECONDS,Unit=Seconds,Dimensions=Name=ProjectName,Value=$CODEBUILD_PROJECT_NAME
+        echo "⏱️ Build duration metric sent: $DURATION_SECONDS seconds"
+
+      # 3. Build Frequency Metric (increment counter)
+      - |
+        aws cloudwatch put-metric-data \
+          --namespace "CodeBuild/CustomMetrics" \
+          --metric-data MetricName=BuildCount,Value=1,Unit=Count,Dimensions=Name=ProjectName,Value=$CODEBUILD_PROJECT_NAME
+        echo "📊 Build frequency metric sent"
+
+      # 4. Environment & Resource Metrics
+      - |
+        # Get memory usage (in MB)
+        MEMORY_USAGE=$(free -m | awk 'NR==2{printf "%.2f", $3*100/$2}')
+        aws cloudwatch put-metric-data \
+          --namespace "CodeBuild/CustomMetrics" \
+          --metric-data MetricName=MemoryUtilization,Value=$MEMORY_USAGE,Unit=Percent,Dimensions=Name=ProjectName,Value=$CODEBUILD_PROJECT_NAME
+        echo "🧠 Memory utilization metric sent: $MEMORY_USAGE%"
+
+      # 5. Build Phase Duration Metrics (if available)
+      - |
+        if [ ! -z "$CODEBUILD_BUILD_ID" ]; then
+          aws cloudwatch put-metric-data \
+            --namespace "CodeBuild/CustomMetrics" \
+            --metric-data MetricName=BuildExecuted,Value=1,Unit=Count,Dimensions=Name=BuildType,Value=Scheduled,Name=ProjectName,Value=$CODEBUILD_PROJECT_NAME
+          echo "🔄 Build execution metric sent"
+        fi
+
+      # 6. Custom Business Metrics (add your own based on needs)
+      - |
+        # Example: Track deployment readiness
+        aws cloudwatch put-metric-data \
+          --namespace "CodeBuild/CustomMetrics" \
+          --metric-data MetricName=DeploymentReady,Value=1,Unit=Count,Dimensions=Name=ProjectName,Value=$CODEBUILD_PROJECT_NAME
+        echo "🚀 Deployment readiness metric sent"
+
+      # 7. Send timestamp for last successful build
+      - |
+        if [ $CODEBUILD_BUILD_SUCCEEDING -eq 1 ]; then
+          TIMESTAMP=$(date +%s)
+          aws cloudwatch put-metric-data \
+            --namespace "CodeBuild/CustomMetrics" \
+            --metric-data MetricName=LastSuccessfulBuild,Value=$TIMESTAMP,Unit=None,Dimensions=Name=ProjectName,Value=$CODEBUILD_PROJECT_NAME
+          echo "🕒 Last successful build timestamp sent: $(date)"
+        fi
+
+      - echo "📈 All custom metrics sent to CloudWatch namespace: CodeBuild/CustomMetrics"
+      - echo "Post-build phase completed on $(date)"
+
+artifacts:
+  files:
+    - "**/*"
+  name: $CODEBUILD_PROJECT_NAME-$(date +%Y-%m-%d-%H-%M-%S)
+
+cache:
+  paths:
+    - "/root/.npm/**/*" # For Node.js npm cache
+    - "/root/.cache/pip/**/*" # For Python pip cache
